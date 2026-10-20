@@ -1,0 +1,27 @@
+{
+  "processed": 117460,
+  "alerts": 22642,
+  "reviews": 1387,
+  "benign": 93431,
+  "rejected": 0,
+  "duplicates": 0,
+  "invalid_events": 0,
+  "by_class": {
+    "Benign": 93431,
+    "DDoS attacks-LOIC-HTTP": 18288,
+    "Brute Force -XSS": 1880,
+    "Brute Force -Web": 3481,
+    "SQL Injection": 352,
+    "Infilteration": 25,
+    "DoS attacks-GoldenEye": 3
+  },
+  "last_batch_events": 20,
+  "last_batch_latency_ms": 211.1,
+  "uptime_s": 1641.5,
+  "updated_utc": "2026-10-19T14:22:56Z",
+  "snapshot": {
+    "source_events": 24029,
+    "kept": 1500,
+    "created_utc": "2026-10-20 08:54"
+  }
+}

@@ -1,0 +1,6 @@
+# Streamlit Cloud installs this file. It only needs what dashboard.py imports.
+# For the full pipeline (training, SHAP, live monitor) install requirements-full.txt locally.
+streamlit>=1.50
+altair>=5
+pandas>=1.5.0
+numpy>=1.23.0

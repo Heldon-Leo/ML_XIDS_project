@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ML-XIDS Detection Event",
+  "description": "Contract between ML-XIDS (Module 4) and the ontology / graph / dashboard modules.",
+  "type": "object",
+  "required": ["schema_version", "event_id", "source_module", "evidence_type", "timestamp_utc",
+               "predicted_class", "is_malicious", "confidence", "status", "severity",
+               "shap_evidence", "model", "ontology_status"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "event_id": {"type": "string", "minLength": 8},
+    "source_module": {"const": "ML-XIDS"},
+    "evidence_type": {"const": "ML_NETWORK_FLOW_PREDICTION"},
+    "timestamp_utc": {"type": "string"},
+    "capture_timestamp": {"type": ["string", "null"]},
+    "flow_id": {"type": ["string", "null"]},
+    "src_ip": {"type": ["string", "null"]},
+    "dst_ip": {"type": ["string", "null"]},
+    "src_port": {"type": ["integer", "null"]},
+    "dst_port": {"type": ["integer", "null"]},
+    "protocol": {"type": ["integer", "null"]},
+    "predicted_class": {"type": "string"},
+    "is_malicious": {"type": "boolean"},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "class_probabilities": {"type": "object", "additionalProperties": {"type": "number"}},
+    "status": {"enum": ["ALERT", "REVIEW", "BENIGN"]},
+    "severity": {"enum": ["none", "medium", "high"]},
+    "mitre": {
+      "type": ["object", "null"],
+      "properties": {"technique_id": {"type": ["string", "null"]}, "technique_name": {"type": ["string", "null"]}}
+    },
+    "shap_evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["feature", "value", "shap_value", "effect"],
+        "properties": {
+          "feature": {"type": "string"},
+          "value": {"type": ["number", "null"]},
+          "shap_value": {"type": "number"},
+          "effect": {"enum": ["supports", "opposes"]}
+        }
+      }
+    },
+    "explanation": {"type": ["string", "null"]},
+    "explanation_method": {"type": ["string", "null"]},
+    "data_quality": {
+      "type": "object",
+      "properties": {
+        "imputed_features": {"type": "integer"},
+        "out_of_range_features": {"type": "integer"}
+      }
+    },
+    "model": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {"name": {"type": "string"}, "version": {"type": "string"}, "trained_classes": {"type": "integer"}}
+    },
+    "ontology_status": {"enum": ["PENDING", "NOT_REQUIRED"]},
+    "ground_truth": {"type": ["string", "null"]}
+  }
+}

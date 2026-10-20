@@ -1,0 +1,35 @@
+
+# Python virtual environments
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*recovery-codes*
+
+# Large datasets
+data/
+datasets/
+
+# Large preprocessing artifacts
+models/preprocessed_split.pkl
+
+# Generated monitoring outputs and logs
+outputs/
+outputs.zip
+capture/
+*.log
+*.jsonl
+
+# IDE files
+.vscode/
+.idea/

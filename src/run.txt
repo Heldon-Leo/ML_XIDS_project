@@ -1,0 +1,3 @@
+python simulate_traffic.py --reset --batch 20 --interval 2    # terminal 1
+python live_monitor.py --from-start                            # terminal 2
+streamlit run dashboard.py 
