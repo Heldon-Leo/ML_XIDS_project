@@ -16,13 +16,13 @@ import streamlit as st
 import config
 
 DEMO_DIR = os.path.join(config.BASE_DIR, "demo_data", "live")
-LIVE_STATS = config.LIVE_STATS_JSON
-LIVE_ALERTS = config.LIVE_ALERTS_JSONL
-# Local run: use outputs/live written by live_monitor.py.  Cloud run (no monitor, no model): use the saved snapshot.
-DEMO_MODE = not os.path.exists(LIVE_STATS) and os.path.exists(os.path.join(DEMO_DIR, "live_stats.json"))
-if DEMO_MODE:
-    LIVE_STATS = os.path.join(DEMO_DIR, "live_stats.json")
-    LIVE_ALERTS = os.path.join(DEMO_DIR, "alerts.jsonl")
+LOCAL_STATS = config.LIVE_STATS_JSON
+LOCAL_ALERTS = config.LIVE_ALERTS_JSONL
+
+# Cloud mirror: sync_to_cloud.py (running on the laptop next to the monitor) pushes feed.json to this branch.
+FEED_REPO = os.environ.get("FEED_REPO", "Heldon-Leo/ML_XIDS_project")
+FEED_BRANCH = os.environ.get("FEED_BRANCH", "live-data")
+FEED_PATH = "feed.json"
 
 st.set_page_config(page_title="ML-XIDS Live Monitor", page_icon="🛡️", layout="wide")
 
@@ -83,12 +83,56 @@ def load_events(path: str, tail: int = 2000) -> list:
     return _read_jsonl(path, os.path.getmtime(path), tail)
 
 
-def load_stats() -> dict:
+def _secret(name: str):
     try:
-        with open(LIVE_STATS, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
+        return st.secrets.get(name)
+    except Exception:          # no secrets file locally
+        return None
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def fetch_feed(url: str, token: str | None, bucket: int):
+    """Download feed.json (stats + recent alert events) pushed by the laptop. Returns (stats, events) or None."""
+    import urllib.request
+    try:
+        headers = {"User-Agent": "ml-xids-dashboard"}
+        if token:                                  # GitHub API: no CDN delay (needs a read-only token in Secrets)
+            headers.update({"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.raw"})
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as r:
+            feed = json.loads(r.read().decode("utf-8"))
+        return feed.get("stats") or {}, feed.get("events") or []
+    except Exception:
+        return None
+
+
+def _feed_url(token) -> str:
+    override = os.environ.get("FEED_URL") or _secret("FEED_URL")
+    if override:
+        return override
+    if token:
+        return f"https://api.github.com/repos/{FEED_REPO}/contents/{FEED_PATH}?ref={FEED_BRANCH}"
+    return f"https://raw.githubusercontent.com/{FEED_REPO}/{FEED_BRANCH}/{FEED_PATH}"      # CDN: up to ~5 min old
+
+
+def get_data():
+    """Returns (mode, stats, events). mode: LOCAL (monitor on this PC) | MIRROR (pushed from the laptop) | DEMO (saved)."""
+    if os.path.exists(LOCAL_STATS):
+        try:
+            with open(LOCAL_STATS, encoding="utf-8") as f:
+                stats = json.load(f)
+        except (OSError, ValueError):
+            stats = {}
+        return "LOCAL", stats, load_events(LOCAL_ALERTS)
+    token = _secret("GITHUB_TOKEN")
+    got = fetch_feed(_feed_url(token), token, 0)
+    if got and got[0]:
+        return "MIRROR", got[0], got[1]
+    demo_stats = os.path.join(DEMO_DIR, "live_stats.json")
+    if os.path.exists(demo_stats):
+        with open(demo_stats, encoding="utf-8") as f:
+            return "DEMO", json.load(f), load_events(os.path.join(DEMO_DIR, "alerts.jsonl"))
+    return "NONE", {}, []
 
 
 def kpi(col, label, value, color="#e5edf7"):
@@ -104,24 +148,43 @@ with st.sidebar:
     show = st.multiselect("Status", ["ALERT", "REVIEW"], default=["ALERT", "REVIEW"])
     min_conf = st.slider("Min confidence", 0.0, 1.0, 0.0, 0.05)
     st.divider()
-    st.caption("Data: " + ("saved demo run (demo_data/live)" if DEMO_MODE else config.LIVE_OUTPUT_DIR))
+    st.caption("Data: " + {"LOCAL": config.LIVE_OUTPUT_DIR, "MIRROR": "laptop feed (GitHub, branch live-data)",
+                           "DEMO": "saved demo run (demo_data/live)"}.get(get_data()[0], "none"))
     st.caption("Attack classes: ALERT = confidence ≥ threshold; REVIEW = attack predicted below it.")
 
 
+def _age_text(stats: dict):
+    from datetime import datetime, timezone
+    try:
+        t = datetime.fromisoformat(str(stats.get("updated_utc")).replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        sec = (datetime.now(timezone.utc) - t).total_seconds()
+    except ValueError:
+        return None, None
+    return sec, (f"{sec:.0f} s" if sec < 120 else f"{sec / 60:.0f} min" if sec < 7200 else f"{sec / 3600:.1f} h")
+
+
 def render():
-    stats = load_stats()
-    events = load_events(LIVE_ALERTS)
-    st.markdown("### Live detection feed" if not DEMO_MODE else "### Detection feed (saved demo run)")
-    if DEMO_MODE:
+    mode, stats, events = get_data()
+    st.markdown({"LOCAL": "### Live detection feed", "MIRROR": "### Live detection feed (cloud mirror)"}.get(mode, "### Detection feed (saved demo run)"))
+    if mode == "MIRROR":
+        sec, txt = _age_text(stats)
+        if sec is not None and sec > 600:
+            st.warning(f"The laptop has not sent new results for {txt}. The monitor or sync_to_cloud.py is probably stopped; "
+                       "the numbers below are the last ones received.")
+        else:
+            st.info("Cloud mirror: the ML-XIDS monitor (XGBoost + TreeSHAP) runs on the author's laptop and sends its "
+                    "latest results here about once a minute." + (f" Last update {txt} ago." if txt else ""))
+    elif mode == "DEMO":
         snap = stats.get("snapshot", {})
-        st.info("Cloud demo: this page replays a saved run of the ML-XIDS live monitor "
-                "(XGBoost + TreeSHAP). The model itself runs locally; no live traffic is processed here."
+        st.info("Cloud demo: this page replays a saved run of the ML-XIDS live monitor (XGBoost + TreeSHAP). "
+                "No live traffic is processed here."
                 + (f" Snapshot: {snap.get('kept', '?')} of {snap.get('source_events', '?')} alert events, "
                    f"saved {snap.get('created_utc', '?')}." if snap else ""))
     if not stats:
         st.info("No data yet. Start the monitor: `python live_monitor.py` "
-                "(demo traffic: `python simulate_traffic.py`). For the cloud demo run "
-                "`python make_demo_snapshot.py` and commit demo_data/.")
+                "(demo traffic: `python simulate_traffic.py`). For the cloud mirror also run `python sync_to_cloud.py`.")
         return
 
     c = st.columns(6)
